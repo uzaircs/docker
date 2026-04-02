@@ -12,9 +12,9 @@ When you run `./install.sh`, the script:
 
 ## Default host behavior
 
-- the script asks you for a domain when it detects a project
-- the first detected project usually becomes your main domain
-- additional detected projects get a suggested default like `<folder-name>.<main-domain>`
+- the script asks you for the full domain for each detected project
+- each project can use a completely different domain
+- example: folder `abc` can be mapped to `abc.io`
 - if no project contains a `Dockerfile`, the script asks for the landing page domain
 
 ## Usage
@@ -29,10 +29,27 @@ During an interactive run, the script will prompt you for the domain for each de
 Optional flags:
 
 ```bash
-./install.sh --domain mysite.com
+./install.sh --domain abc.io --domain api.xyz.net
 ./install.sh --generate-only
 ./install.sh --skip-install
 ```
+
+If you run without a TTY, pass `--domain` once per detected project in alphabetical folder order.
+
+## Default resources
+
+Generated services use these defaults unless you override them with environment variables before running the script:
+
+```bash
+DEFAULT_CPUS=0.50
+DEFAULT_MEMORY=512m
+```
+
+That default applies to:
+
+- `nginx-proxy`
+- each auto-detected project service
+- the fallback default landing page service
 
 ## Important editing rule
 

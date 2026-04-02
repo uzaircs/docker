@@ -5,11 +5,12 @@ services:
     image: nginxproxy/nginx-proxy:alpine
     container_name: nginx-proxy
     restart: unless-stopped
+    cpus: '__DEFAULT_CPUS__'
+    mem_limit: '__DEFAULT_MEMORY__'
     ports:
       - "80:80"
       - "443:443"
     environment:
-      DEFAULT_HOST: __DEFAULT_DOMAIN__
       ENABLE_IPV6: "false"
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
@@ -21,6 +22,7 @@ services:
 
   # Add fixed shared services here when needed.
   # Examples: mysql, postgres, redis, mailpit, minio.
+  # Generated services default to 0.50 CPU and 512m RAM.
   # The generated docker-compose.yml is rebuilt by install.sh,
   # so put manual service definitions in this template instead.
 

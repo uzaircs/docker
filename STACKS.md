@@ -8,8 +8,8 @@ This file gives you copy/paste-ready examples for common project types.
 2. Add a `Dockerfile` in that app folder.
 3. Make sure the final container serves HTTP and has an `EXPOSE` line.
 4. Run `./docker/install.sh` again.
-5. The script asks you for a domain for the first detected project.
-6. Extra detected projects get a suggested default like `<folder>.<your-main-domain>`, and you can override it.
+5. The script asks you for the full domain for each detected project.
+6. Each project can use any domain you want, even if the domains are unrelated.
 
 Example layout:
 
@@ -24,11 +24,32 @@ Example layout:
     `-- Dockerfile
 ```
 
+Example mapping:
+
+- folder `laravel` -> `app.example.com`
+- folder `react` -> `frontend.io`
+- folder `api` -> `api.company.net`
+
 ## Important rule for databases and shared tools
 
 Do not add MySQL, Postgres, Redis, Mailpit, or MinIO to the generated `docker-compose.yml`.
 
 Add them to `docker/docker-compose.template.yml`, because `install.sh` rebuilds the generated file.
+
+## Default resources
+
+Generated services use:
+
+- `0.50` CPU
+- `512m` RAM
+
+If you want to change that before generation:
+
+```bash
+DEFAULT_CPUS=1.00 DEFAULT_MEMORY=1g ./docker/install.sh
+```
+
+If you automate the run without prompts, pass `--domain` once per detected project in alphabetical folder order.
 
 ## Laravel
 

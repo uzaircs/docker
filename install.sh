@@ -6,12 +6,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 TEMPLATE_FILE="${SCRIPT_DIR}/docker-compose.template.yml"
 OUTPUT_FILE="${PROJECT_ROOT}/docker-compose.yml"
-DEFAULT_DOMAIN="${DEFAULT_DOMAIN:-}"
+DEFAULT_CPUS="${DEFAULT_CPUS:-0.50}"
+DEFAULT_MEMORY="${DEFAULT_MEMORY:-512m}"
 GENERATE_ONLY=0
 SKIP_INSTALL=0
 CURRENT_STEP=0
 TOTAL_STEPS=7
 SUDO_CMD=""
+PRESET_DOMAINS=()
+CONFIGURED_DOMAINS=()
+NEXT_PRESET_DOMAIN=""
 
 if [[ -t 1 ]]; then
   C_RESET=$'\033[0m'
@@ -33,9 +37,9 @@ fi
 
 usage() {
   cat <<EOF
-Usage: ./install.sh [--domain example.com] [--generate-only] [--skip-install]
+Usage: ./install.sh [--domain example.com] [--domain api.example.com] [--generate-only] [--skip-install]
 
-  --domain <name>   Pre-fill the main domain or use for non-interactive runs
+  --domain <name>   Provide a full domain for a detected project (repeat as needed)
   --generate-only   Only build docker-compose.yml, do not start containers
   --skip-install    Skip Docker installation checks
 EOF
@@ -93,6 +97,17 @@ validate_domain() {
   [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)(\.([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?))*$ ]]
 }
 
+take_preset_domain() {
+  NEXT_PRESET_DOMAIN=""
+
+  if ((${#PRESET_DOMAINS[@]} == 0)); then
+    return 0
+  fi
+
+  NEXT_PRESET_DOMAIN="${PRESET_DOMAINS[0]}"
+  PRESET_DOMAINS=("${PRESET_DOMAINS[@]:1}")
+}
+
 prompt_for_domain() {
   local prompt_message="$1"
   local suggested_domain="${2:-}"
@@ -129,7 +144,7 @@ prompt_for_domain() {
     return
   fi
 
-  fail "No domain was provided. Run the script interactively or pass --domain example.com."
+  fail "No domain was provided. Run the script interactively or pass --domain once per project."
 }
 
 detect_virtual_port() {
@@ -272,19 +287,17 @@ ensure_supporting_directories() {
 generate_services_file() {
   local services_file="$1"
   local found_projects=0
-  local project_index=0
   local skipped_without_dockerfile=0
   local dir_path=""
-  local main_domain=""
 
   : > "${services_file}"
 
   if is_interactive; then
-    info "You can press Enter to accept the suggested domain for each detected project."
+    info "Each detected project will ask for its own full domain."
   fi
 
   while IFS= read -r -d '' dir_path; do
-    local dir_name service_name dockerfile_path virtual_host virtual_port suggested_domain
+    local dir_name service_name dockerfile_path virtual_host virtual_port preset_domain
     dir_name="$(basename "${dir_path}")"
 
     if [[ "${dir_name}" == "$(basename "${SCRIPT_DIR}")" ]]; then
@@ -297,22 +310,13 @@ generate_services_file() {
       continue
     fi
 
-    project_index=$((project_index + 1))
     found_projects=$((found_projects + 1))
     service_name="$(sanitize_name "${dir_name}")"
     virtual_port="$(detect_virtual_port "${dockerfile_path}")"
-
-    if [[ "${project_index}" -eq 1 ]]; then
-      virtual_host="$(prompt_for_domain "Enter the domain for ${dir_name}" "${DEFAULT_DOMAIN}")"
-      DEFAULT_DOMAIN="${virtual_host}"
-      main_domain="${virtual_host}"
-    else
-      suggested_domain=""
-      if [[ -n "${main_domain}" ]]; then
-        suggested_domain="${service_name}.${main_domain}"
-      fi
-      virtual_host="$(prompt_for_domain "Enter the domain for ${dir_name}" "${suggested_domain}")"
-    fi
+    take_preset_domain
+    preset_domain="${NEXT_PRESET_DOMAIN}"
+    virtual_host="$(prompt_for_domain "Enter the full domain for ${dir_name}" "${preset_domain}")"
+    CONFIGURED_DOMAINS+=("${dir_name} -> ${virtual_host}")
 
     cat >> "${services_file}" <<EOF
   ${service_name}:
@@ -321,6 +325,8 @@ generate_services_file() {
       dockerfile: Dockerfile
     container_name: ${service_name}-app
     restart: unless-stopped
+    cpus: $(yaml_quote "${DEFAULT_CPUS}")
+    mem_limit: $(yaml_quote "${DEFAULT_MEMORY}")
     environment:
       VIRTUAL_HOST: $(yaml_quote "${virtual_host}")
       VIRTUAL_PORT: $(yaml_quote "${virtual_port}")
@@ -335,14 +341,19 @@ EOF
   done < <(find "${PROJECT_ROOT}" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0 | sort -z)
 
   if [[ "${found_projects}" -eq 0 ]]; then
-    DEFAULT_DOMAIN="$(prompt_for_domain "Enter the domain for the default landing page" "${DEFAULT_DOMAIN}")"
+    local landing_domain
+    take_preset_domain
+    landing_domain="$(prompt_for_domain "Enter the full domain for the default landing page" "${NEXT_PRESET_DOMAIN}")"
+    CONFIGURED_DOMAINS+=("default-site -> ${landing_domain}")
     cat >> "${services_file}" <<EOF
   default-site:
     image: nginx:alpine
     container_name: default-site
     restart: unless-stopped
+    cpus: $(yaml_quote "${DEFAULT_CPUS}")
+    mem_limit: $(yaml_quote "${DEFAULT_MEMORY}")
     environment:
-      VIRTUAL_HOST: $(yaml_quote "${DEFAULT_DOMAIN}")
+      VIRTUAL_HOST: $(yaml_quote "${landing_domain}")
       VIRTUAL_PORT: '80'
     volumes:
       - $(yaml_quote "./docker/default-site:/usr/share/nginx/html:ro")
@@ -350,13 +361,17 @@ EOF
       - proxy
 
 EOF
-    warn "No Dockerfile-based projects were found. A default landing page will answer for ${DEFAULT_DOMAIN}."
+    warn "No Dockerfile-based projects were found. A default landing page will answer for ${landing_domain}."
   else
     success "Prepared ${found_projects} app service(s) from ${PROJECT_ROOT}."
   fi
 
   if [[ "${skipped_without_dockerfile}" -gt 0 ]]; then
     info "Skipped ${skipped_without_dockerfile} directory(s) without a Dockerfile."
+  fi
+
+  if ((${#PRESET_DOMAINS[@]} > 0)); then
+    warn "Unused preset domain(s): ${PRESET_DOMAINS[*]}"
   fi
 }
 
@@ -369,11 +384,13 @@ render_compose_file() {
 
   awk \
     -v stack_name="${stack_name}" \
-    -v default_domain="${DEFAULT_DOMAIN}" \
+    -v default_cpus="${DEFAULT_CPUS}" \
+    -v default_memory="${DEFAULT_MEMORY}" \
     -v services_file="${services_file}" '
       {
         gsub(/__STACK_NAME__/, stack_name)
-        gsub(/__DEFAULT_DOMAIN__/, default_domain)
+        gsub(/__DEFAULT_CPUS__/, default_cpus)
+        gsub(/__DEFAULT_MEMORY__/, default_memory)
       }
       /__AUTO_SERVICES__/ {
         while ((getline line < services_file) > 0) {
@@ -423,8 +440,17 @@ print_summary() {
   printf "\n${C_BOLD}${C_GREEN}Setup complete.${C_RESET}\n"
   printf "   Project root : %s\n" "${PROJECT_ROOT}"
   printf "   Compose file : %s\n" "${OUTPUT_FILE}"
-  printf "   Main domain  : %s\n" "${DEFAULT_DOMAIN}"
-  printf "   Proxy image  : nginxproxy/nginx-proxy\n\n"
+  printf "   Proxy image  : nginxproxy/nginx-proxy\n"
+  printf "   Defaults     : %s CPU / %s RAM per generated service\n" "${DEFAULT_CPUS}" "${DEFAULT_MEMORY}"
+
+  if ((${#CONFIGURED_DOMAINS[@]} > 0)); then
+    printf "   Domains      :\n"
+    for mapping in "${CONFIGURED_DOMAINS[@]}"; do
+      printf "     - %s\n" "${mapping}"
+    done
+  fi
+
+  printf "\n"
 }
 
 main() {
@@ -433,7 +459,7 @@ main() {
       --domain)
         shift
         [[ $# -gt 0 ]] || fail "Missing value after --domain"
-        DEFAULT_DOMAIN="$1"
+        PRESET_DOMAINS+=("$1")
         ;;
       --generate-only)
         GENERATE_ONLY=1
