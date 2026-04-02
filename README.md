@@ -12,9 +12,10 @@ When you run `./install.sh`, the script:
 
 ## Default host behavior
 
-- the first detected Docker project is attached to `abc.com`
-- additional detected projects are attached to `<folder-name>.abc.com`
-- if no project contains a `Dockerfile`, a default landing page is served on `abc.com`
+- the script asks you for a domain when it detects a project
+- the first detected project usually becomes your main domain
+- additional detected projects get a suggested default like `<folder-name>.<main-domain>`
+- if no project contains a `Dockerfile`, the script asks for the landing page domain
 
 ## Usage
 
@@ -22,6 +23,8 @@ When you run `./install.sh`, the script:
 chmod +x ./install.sh
 ./install.sh
 ```
+
+During an interactive run, the script will prompt you for the domain for each detected project.
 
 Optional flags:
 

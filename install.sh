@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 TEMPLATE_FILE="${SCRIPT_DIR}/docker-compose.template.yml"
 OUTPUT_FILE="${PROJECT_ROOT}/docker-compose.yml"
-DEFAULT_DOMAIN="${DEFAULT_DOMAIN:-abc.com}"
+DEFAULT_DOMAIN="${DEFAULT_DOMAIN:-}"
 GENERATE_ONLY=0
 SKIP_INSTALL=0
 CURRENT_STEP=0
@@ -35,7 +35,7 @@ usage() {
   cat <<EOF
 Usage: ./install.sh [--domain example.com] [--generate-only] [--skip-install]
 
-  --domain <name>   Override the default virtual host (default: abc.com)
+  --domain <name>   Pre-fill the main domain or use for non-interactive runs
   --generate-only   Only build docker-compose.yml, do not start containers
   --skip-install    Skip Docker installation checks
 EOF
@@ -83,6 +83,53 @@ sanitize_name() {
   local value
   value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')"
   printf '%s' "${value:-service}"
+}
+
+is_interactive() {
+  [[ -t 0 ]]
+}
+
+validate_domain() {
+  [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)(\.([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?))*$ ]]
+}
+
+prompt_for_domain() {
+  local prompt_message="$1"
+  local suggested_domain="${2:-}"
+  local entered_domain=""
+
+  if is_interactive; then
+    while true; do
+      if [[ -n "${suggested_domain}" ]]; then
+        printf "   ${C_BLUE}?${C_RESET} %s [%s]: " "${prompt_message}" "${suggested_domain}" >&2
+      else
+        printf "   ${C_BLUE}?${C_RESET} %s: " "${prompt_message}" >&2
+      fi
+
+      read -r entered_domain || fail "Domain input was cancelled."
+      entered_domain="${entered_domain:-${suggested_domain}}"
+      entered_domain="$(printf '%s' "${entered_domain}" | tr '[:upper:]' '[:lower:]')"
+
+      if [[ -z "${entered_domain}" ]]; then
+        printf "   ${C_YELLOW}[WARN]${C_RESET} A domain is required for this project.\n" >&2
+        continue
+      fi
+
+      if validate_domain "${entered_domain}"; then
+        printf '%s' "${entered_domain}"
+        return
+      fi
+
+      printf "   ${C_YELLOW}[WARN]${C_RESET} Please enter a valid hostname such as example.com or api.example.com.\n" >&2
+    done
+  fi
+
+  if [[ -n "${suggested_domain}" ]]; then
+    printf '%s' "$(printf '%s' "${suggested_domain}" | tr '[:upper:]' '[:lower:]')"
+    return
+  fi
+
+  fail "No domain was provided. Run the script interactively or pass --domain example.com."
 }
 
 detect_virtual_port() {
@@ -228,11 +275,16 @@ generate_services_file() {
   local project_index=0
   local skipped_without_dockerfile=0
   local dir_path=""
+  local main_domain=""
 
   : > "${services_file}"
 
+  if is_interactive; then
+    info "You can press Enter to accept the suggested domain for each detected project."
+  fi
+
   while IFS= read -r -d '' dir_path; do
-    local dir_name service_name dockerfile_path virtual_host virtual_port
+    local dir_name service_name dockerfile_path virtual_host virtual_port suggested_domain
     dir_name="$(basename "${dir_path}")"
 
     if [[ "${dir_name}" == "$(basename "${SCRIPT_DIR}")" ]]; then
@@ -251,9 +303,15 @@ generate_services_file() {
     virtual_port="$(detect_virtual_port "${dockerfile_path}")"
 
     if [[ "${project_index}" -eq 1 ]]; then
-      virtual_host="${DEFAULT_DOMAIN}"
+      virtual_host="$(prompt_for_domain "Enter the domain for ${dir_name}" "${DEFAULT_DOMAIN}")"
+      DEFAULT_DOMAIN="${virtual_host}"
+      main_domain="${virtual_host}"
     else
-      virtual_host="${service_name}.${DEFAULT_DOMAIN}"
+      suggested_domain=""
+      if [[ -n "${main_domain}" ]]; then
+        suggested_domain="${service_name}.${main_domain}"
+      fi
+      virtual_host="$(prompt_for_domain "Enter the domain for ${dir_name}" "${suggested_domain}")"
     fi
 
     cat >> "${services_file}" <<EOF
@@ -277,6 +335,7 @@ EOF
   done < <(find "${PROJECT_ROOT}" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0 | sort -z)
 
   if [[ "${found_projects}" -eq 0 ]]; then
+    DEFAULT_DOMAIN="$(prompt_for_domain "Enter the domain for the default landing page" "${DEFAULT_DOMAIN}")"
     cat >> "${services_file}" <<EOF
   default-site:
     image: nginx:alpine

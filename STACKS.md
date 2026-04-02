@@ -8,8 +8,8 @@ This file gives you copy/paste-ready examples for common project types.
 2. Add a `Dockerfile` in that app folder.
 3. Make sure the final container serves HTTP and has an `EXPOSE` line.
 4. Run `./docker/install.sh` again.
-5. The first detected project gets `abc.com`.
-6. Extra detected projects get `<folder>.abc.com`.
+5. The script asks you for a domain for the first detected project.
+6. Extra detected projects get a suggested default like `<folder>.<your-main-domain>`, and you can override it.
 
 Example layout:
 
@@ -70,7 +70,7 @@ CMD ["apache2-foreground"]
 Useful `.env` values:
 
 ```env
-APP_URL=http://abc.com
+APP_URL=https://your-domain.com
 APP_ENV=production
 APP_DEBUG=false
 DB_CONNECTION=mysql
@@ -342,7 +342,7 @@ MAIL_PORT=1025
 MAIL_USERNAME=null
 MAIL_PASSWORD=null
 MAIL_ENCRYPTION=null
-MAIL_FROM_ADDRESS="hello@abc.com"
+MAIL_FROM_ADDRESS="hello@your-domain.com"
 MAIL_FROM_NAME="${APP_NAME}"
 ```
 
