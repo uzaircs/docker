@@ -31,19 +31,39 @@ Optional flags:
 ./install.sh --skip-install
 ```
 
+## Important editing rule
+
+Do not manually edit the generated `/var/www/docker-compose.yml`.
+
+That file is rebuilt every time `./install.sh` runs.
+
+If you need to add shared services such as MySQL, Postgres, Redis, Mailpit, or MinIO, add them to:
+
+```text
+/var/www/docker/docker-compose.template.yml
+```
+
+If you need to add or update an app, put a `Dockerfile` inside that app folder and rerun the script.
+
 ## Expected layout
 
 ```text
 /var/www
-├── docker
-│   ├── install.sh
-│   ├── docker-compose.template.yml
-│   └── default-site
-├── app-one
-│   └── Dockerfile
-└── app-two
-    └── Dockerfile
+|-- docker
+|   |-- install.sh
+|   |-- docker-compose.template.yml
+|   |-- default-site
+|   `-- STACKS.md
+|-- app-one
+|   `-- Dockerfile
+`-- app-two
+    `-- Dockerfile
 ```
 
 The generated `/var/www/docker-compose.yml` will always contain the proxy plus any buildable
 project services discovered in the parent folder.
+
+## Stack recipes
+
+Copy/paste examples for Laravel, React, Vue, Next.js, Node, Python, static sites, and shared
+services are in [STACKS.md](./STACKS.md).

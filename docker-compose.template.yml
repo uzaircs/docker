@@ -19,6 +19,11 @@ services:
     networks:
       - proxy
 
+  # Add fixed shared services here when needed.
+  # Examples: mysql, postgres, redis, mailpit, minio.
+  # The generated docker-compose.yml is rebuilt by install.sh,
+  # so put manual service definitions in this template instead.
+
 __AUTO_SERVICES__
 
 networks:
