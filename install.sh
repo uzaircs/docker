@@ -90,7 +90,7 @@ sanitize_name() {
 }
 
 is_interactive() {
-  [[ -t 0 ]]
+  [[ -t 0 || -r /dev/tty ]]
 }
 
 validate_domain() {
@@ -112,8 +112,13 @@ prompt_for_domain() {
   local prompt_message="$1"
   local suggested_domain="${2:-}"
   local entered_domain=""
+  local input_source=""
 
   if is_interactive; then
+    if [[ -r /dev/tty ]]; then
+      input_source="/dev/tty"
+    fi
+
     while true; do
       if [[ -n "${suggested_domain}" ]]; then
         printf "   ${C_BLUE}?${C_RESET} %s [%s]: " "${prompt_message}" "${suggested_domain}" >&2
@@ -121,7 +126,11 @@ prompt_for_domain() {
         printf "   ${C_BLUE}?${C_RESET} %s: " "${prompt_message}" >&2
       fi
 
-      read -r entered_domain || fail "Domain input was cancelled."
+      if [[ -n "${input_source}" ]]; then
+        read -r entered_domain < "${input_source}" || fail "Domain input was cancelled."
+      else
+        read -r entered_domain || fail "Domain input was cancelled."
+      fi
       entered_domain="${entered_domain:-${suggested_domain}}"
       entered_domain="$(printf '%s' "${entered_domain}" | tr '[:upper:]' '[:lower:]')"
 
