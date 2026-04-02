@@ -1,0 +1,26 @@
+name: __STACK_NAME__
+
+services:
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DEFAULT_HOST: __DEFAULT_DOMAIN__
+      ENABLE_IPV6: "false"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./docker/nginx/certs:/etc/nginx/certs:rw
+      - ./docker/nginx/vhost.d:/etc/nginx/vhost.d
+      - ./docker/nginx/html:/usr/share/nginx/html
+    networks:
+      - proxy
+
+__AUTO_SERVICES__
+
+networks:
+  proxy:
+    name: nginx-proxy
